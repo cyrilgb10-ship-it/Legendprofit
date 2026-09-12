@@ -33,7 +33,7 @@ function RegisterForm() {
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = event.target;
 
-    // Le code de parrainage provenant du lien ne peut pas être modifié.
+    // Le code de parrainage ne peut jamais être modifié manuellement.
     if (name === "referralCode") {
       return;
     }
@@ -199,20 +199,30 @@ function RegisterForm() {
                 </span>
               </label>
 
-              <input
-                id="referralCode"
-                name="referralCode"
-                type="text"
-                value={form.referralCode}
-                readOnly
-                placeholder="Aucun code de parrainage"
-                className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 font-semibold tracking-wider text-emerald-400 outline-none placeholder:text-gray-600 focus:border-emerald-400"
-              />
+              <div className="relative">
+                <input
+                  id="referralCode"
+                  name="referralCode"
+                  type="text"
+                  value={form.referralCode}
+                  readOnly
+                  tabIndex={-1}
+                  aria-readonly="true"
+                  placeholder="Aucun code de parrainage"
+                  className="w-full cursor-default rounded-xl border border-white/10 bg-black/30 px-4 py-3 pr-12 font-semibold tracking-wider text-emerald-400 outline-none placeholder:text-gray-600 select-none"
+                />
+
+                <span
+                  className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-500"
+                  aria-hidden="true"
+                >
+                  🔒
+                </span>
+              </div>
 
               <p className="mt-2 text-xs text-gray-500">
-                Si vous avez reçu un lien de parrainage, le code sera
-                automatiquement récupéré. Sinon, vous pouvez créer votre
-                compte sans parrain.
+                Le code est automatiquement récupéré depuis le lien de
+                parrainage. Aucun code n'est nécessaire pour créer un compte.
               </p>
             </div>
 
