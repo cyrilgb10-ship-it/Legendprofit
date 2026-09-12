@@ -43,7 +43,7 @@ Je vais effectuer le paiement et envoyer la preuve de paiement pour validation.
 
 Merci.`;
 
-    const whatsappUrl = `https://wa.me/22898126142?text=${encodeURIComponent(
+    const whatsappUrl = `https://wa.me/22871048123?text=${encodeURIComponent(
       message
     )}`;
 
