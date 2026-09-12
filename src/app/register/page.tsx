@@ -33,7 +33,7 @@ function RegisterForm() {
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = event.target;
 
-    // Le code de parrainage ne peut pas être modifié manuellement.
+    // Le code de parrainage provenant du lien ne peut pas être modifié.
     if (name === "referralCode") {
       return;
     }
@@ -49,14 +49,6 @@ function RegisterForm() {
 
     setLoading(true);
     setError("");
-
-    if (!form.referralCode) {
-      setError(
-        "Vous devez utiliser le lien de parrainage reçu pour créer votre compte."
-      );
-      setLoading(false);
-      return;
-    }
 
     try {
       const response = await fetch("/api/register", {
@@ -202,6 +194,9 @@ function RegisterForm() {
                 className="mb-2 block text-sm font-medium text-gray-300"
               >
                 Code de parrainage
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  (facultatif)
+                </span>
               </label>
 
               <input
@@ -210,14 +205,14 @@ function RegisterForm() {
                 type="text"
                 value={form.referralCode}
                 readOnly
-                required
-                placeholder="Code récupéré depuis le lien"
-                className="w-full cursor-not-allowed rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 font-semibold tracking-wider text-emerald-400 outline-none placeholder:text-gray-600"
+                placeholder="Aucun code de parrainage"
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 font-semibold tracking-wider text-emerald-400 outline-none placeholder:text-gray-600 focus:border-emerald-400"
               />
 
               <p className="mt-2 text-xs text-gray-500">
-                Le code de parrainage est automatiquement récupéré depuis le
-                lien de votre parrain et ne peut pas être modifié.
+                Si vous avez reçu un lien de parrainage, le code sera
+                automatiquement récupéré. Sinon, vous pouvez créer votre
+                compte sans parrain.
               </p>
             </div>
 
