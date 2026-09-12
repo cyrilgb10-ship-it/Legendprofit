@@ -23,6 +23,8 @@ export async function POST(request: NextRequest) {
     const password = String(body.password || "");
     const referralCode = String(body.referralCode || "").trim().toUpperCase();
 
+    // Les informations principales sont obligatoires.
+    // Le parrainage est facultatif.
     if (!name || !phone || !email || !password) {
       return NextResponse.json(
         {
@@ -53,6 +55,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Le parrain est facultatif.
+    // S'il est fourni, il doit obligatoirement être valide.
+    let referredById: string | null = null;
+
+    if (referralCode) {
+      const sponsor = await prisma.user.findUnique({
+        where: {
+          referralCode,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!sponsor) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Le lien de parrainage est invalide ou expire.",
+          },
+          { status: 400 }
+        );
+      }
+
+      referredById = sponsor.id;
+    }
+
     const existingUser = await prisma.user.findFirst({
       where: {
         OR: [{ email }, { phone }],
@@ -77,31 +106,6 @@ export async function POST(request: NextRequest) {
         },
         { status: 409 }
       );
-    }
-
-    let referredById: string | undefined;
-
-    if (referralCode) {
-      const sponsor = await prisma.user.findUnique({
-        where: {
-          referralCode,
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      if (!sponsor) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Le code de parrainage est invalide.",
-          },
-          { status: 400 }
-        );
-      }
-
-      referredById = sponsor.id;
     }
 
     let generatedReferralCode = generateReferralCode(name);
