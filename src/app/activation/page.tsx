@@ -37,7 +37,7 @@ Nom complet : ${user.name}
 Numéro de téléphone : ${user.phone}
 Email : ${user.email}
 
-Montant de l'activation : 4 000 FCFA
+Montant de l'activation : 3 500 FCFA
 
 Je vais effectuer le paiement et envoyer la preuve de paiement pour validation.
 
@@ -78,7 +78,7 @@ Merci.`;
             </p>
 
             <p className="mt-2 text-4xl font-black text-emerald-400">
-              4 000 FCFA
+              3 500 FCFA
             </p>
 
             <p className="mt-2 text-xs text-gray-500">
@@ -117,7 +117,7 @@ Merci.`;
             <ol className="mt-3 space-y-2 text-sm text-gray-400">
               <li>1. Cliquez sur « Activer mon compte ».</li>
               <li>2. Vous serez redirigé vers notre WhatsApp.</li>
-              <li>3. Effectuez le paiement de 4 000 FCFA.</li>
+              <li>3. Effectuez le paiement de 3 500 FCFA.</li>
               <li>4. Envoyez la preuve de paiement.</li>
               <li>5. L'administrateur vérifie votre paiement.</li>
               <li>6. Votre compte est ensuite activé.</li>
