@@ -7,6 +7,122 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id              String           @id @default(cuid())
+  name            String
+  email           String           @unique
+  phone           String           @unique
+  password        String
+  role            UserRole         @default(USER)
+  referralCode    String           @unique
+  referredById    String?
+  balance         Int              @default(0)
+  isActive        Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  activation      Activation?
+  taskBalances    TaskBalance[]
+  taskSubmissions TaskSubmission[]
+  transactions    Transaction[]
+  referredBy      User?            @relation("UserReferrals", fields: [referredById], references: [id])
+  referrals       User[]           @relation("UserReferrals")
+  withdrawals     Withdrawal[]
+}
+
+model Activation {
+  id        String           @id @default(cuid())
+  userId    String           @unique
+  amount    Int              @default(4000)
+  status    ActivationStatus @default(PENDING)
+  proof     String?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id          String          @id @default(cuid())
+  userId      String
+  type        TransactionType
+  amount      Int
+  description String?
+  createdAt   DateTime        @default(now())
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+}
+
+model Task {
+  id          String           @id @default(cuid())
+  title       String           @unique
+  description String
+  reward      Int              @default(100)
+  dayOfWeek   Int
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  balances    TaskBalance[]
+  submissions TaskSubmission[]
+
+  @@index([dayOfWeek])
+}
+
+model TaskBalance {
+  id        String   @id @default(cuid())
+  userId    String
+  taskId    String
+  balance   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskId])
+  @@index([userId])
+  @@index([taskId])
+}
+
+model TaskSubmission {
+  id        String     @id @default(cuid())
+  userId    String
+  taskId    String
+  taskDate  DateTime   @db.Date
+  proof     String?
+  status    TaskStatus @default(PENDING)
+  reward    Int        @default(100)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskId, taskDate])
+  @@index([userId])
+  @@index([taskId])
+  @@index([taskDate])
+}
+
+model Withdrawal {
+  id        String           @id @default(cuid())
+  userId    String
+  amount    Int
+  fee       Int              @default(500)
+  netAmount Int
+  method    WithdrawalMethod
+  account   String
+  source    WithdrawalSource
+  taskId    String?
+  status    WithdrawalStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([source])
+  @@index([taskId])
+}
+
 enum UserRole {
   USER
   ADMIN
@@ -51,127 +167,3 @@ enum WithdrawalSource {
   REFERRAL
   TASK
 }
-
-model User {
-  id              String             @id @default(cuid())
-  name            String
-  email           String             @unique
-  phone           String             @unique
-  password        String
-  role            UserRole           @default(USER)
-  referralCode    String             @unique
-  referredById    String?
-  balance         Int                @default(0)
-  isActive        Boolean            @default(false)
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-
-  referredBy      User?              @relation("UserReferrals", fields: [referredById], references: [id])
-  referrals       User[]             @relation("UserReferrals")
-  activation      Activation?
-  transactions    Transaction[]
-  taskSubmissions TaskSubmission[]
-  taskBalances    TaskBalance[]
-  withdrawals     Withdrawal[]
-}
-
-model Activation {
-  id          String           @id @default(cuid())
-  userId      String           @unique
-  amount      Int              @default(4000)
-  status      ActivationStatus @default(PENDING)
-  proof       String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model Transaction {
-  id          String          @id @default(cuid())
-  userId      String
-  type        TransactionType
-  amount      Int
-  description String?
-  createdAt   DateTime        @default(now())
-
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([type])
-}
-
-model Task {
-  id          String     @id @default(cuid())
-  title       String     @unique
-  description String
-  reward      Int        @default(100)
-  dayOfWeek   Int
-  isActive    Boolean    @default(true)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  submissions TaskSubmission[]
-  balances    TaskBalance[]
-
-  @@index([dayOfWeek])
-}
-
-model TaskBalance {
-  id        String   @id @default(cuid())
-  userId    String
-  taskId    String
-  balance   Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, taskId])
-  @@index([userId])
-  @@index([taskId])
-}
-
-model TaskSubmission {
-  id          String     @id @default(cuid())
-  userId      String
-  taskId      String
-  taskDate    DateTime   @db.Date
-  proof       String?
-  status      TaskStatus @default(PENDING)
-  reward      Int        @default(100)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, taskId, taskDate])
-  @@index([userId])
-  @@index([taskId])
-  @@index([taskDate])
-}
-
-model Withdrawal {
-  id        String           @id @default(cuid())
-  userId    String
-  amount    Int
-  fee       Int              @default(500)
-  netAmount Int
-  method    WithdrawalMethod
-  account   String
-  source    WithdrawalSource
-  taskId    String?
-  status    WithdrawalStatus @default(PENDING)
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([status])
-  @@index([source])
-  @@index([taskId])
-}
-
