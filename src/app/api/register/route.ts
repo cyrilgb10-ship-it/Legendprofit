@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
         isActive: false,
         activation: {
           create: {
-            amount: 4000,
+            amount: 3500,
             status: "PENDING",
           },
         },

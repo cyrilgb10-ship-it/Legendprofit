@@ -8,36 +8,63 @@ datasource db {
 }
 
 model User {
-  id              String           @id @default(cuid())
-  name            String
-  email           String           @unique
-  phone           String           @unique
-  password        String
-  role            UserRole         @default(USER)
-  referralCode    String           @unique
-  referredById    String?
-  balance         Int              @default(0)
-  isActive        Boolean          @default(false)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  activation      Activation?
-  taskBalances    TaskBalance[]
-  taskSubmissions TaskSubmission[]
-  transactions    Transaction[]
-  referredBy      User?            @relation("UserReferrals", fields: [referredById], references: [id])
-  referrals       User[]           @relation("UserReferrals")
-  withdrawals     Withdrawal[]
+  id                 String             @id @default(cuid())
+  name               String
+  email              String             @unique
+  phone              String             @unique
+  password           String
+  role               UserRole           @default(USER)
+  referralCode       String             @unique
+  referredById       String?
+  balance            Int                @default(0)
+  isActive           Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  activation         Activation?
+  activationPayments ActivationPayment[]
+  taskBalances       TaskBalance[]
+  taskSubmissions    TaskSubmission[]
+  transactions       Transaction[]
+  referredBy         User?              @relation("UserReferrals", fields: [referredById], references: [id])
+  referrals          User[]              @relation("UserReferrals")
+  withdrawals        Withdrawal[]
 }
 
 model Activation {
-  id        String           @id @default(cuid())
-  userId    String           @unique
-  amount    Int              @default(4000)
-  status    ActivationStatus @default(PENDING)
+  id        String                   @id @default(cuid())
+  userId    String                   @unique
+  amount    Int                      @default(3500)
+  status    ActivationStatus         @default(PENDING)
   proof     String?
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+
+  user      User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments  ActivationPayment[]
+}
+
+model ActivationPayment {
+  id                String                  @id @default(cuid())
+  userId            String
+  activationId      String
+  providerPaymentId String?                 @unique
+  idempotencyKey    String                  @unique
+  amount            Int                     @default(3500)
+  currency          String                  @default("XOF")
+  network           String
+  paymentPhone      String
+  status            ActivationPaymentStatus @default(PENDING)
+  checkoutUrl       String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activation Activation @relation(fields: [activationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([activationId])
+  @@index([status])
 }
 
 model Transaction {
@@ -47,6 +74,7 @@ model Transaction {
   amount      Int
   description String?
   createdAt   DateTime        @default(now())
+
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -62,6 +90,7 @@ model Task {
   isActive    Boolean          @default(true)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
+
   balances    TaskBalance[]
   submissions TaskSubmission[]
 
@@ -75,6 +104,7 @@ model TaskBalance {
   balance   Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -93,6 +123,7 @@ model TaskSubmission {
   reward    Int        @default(100)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+
   task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -115,12 +146,19 @@ model Withdrawal {
   status    WithdrawalStatus @default(PENDING)
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
+
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
   @@index([source])
   @@index([taskId])
+}
+
+model playing_with_neon {
+  id    Int    @id @default(autoincrement())
+  name  String
+  value Float? @db.Real
 }
 
 enum UserRole {
@@ -132,6 +170,13 @@ enum ActivationStatus {
   PENDING
   ACTIVE
   REJECTED
+}
+
+enum ActivationPaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  EXPIRED
 }
 
 enum TransactionType {

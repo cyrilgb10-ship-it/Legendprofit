@@ -1,0 +1,2 @@
+﻿-- La colonne paymentPhone existe déjà dans Neon.
+-- Cette migration documente la modification existante.
