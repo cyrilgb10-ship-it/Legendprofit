@@ -10,11 +10,7 @@ export const dynamic = "force-dynamic";
 const ACTIVATION_AMOUNT = 3500;
 const CURRENCY = "XOF";
 
-const ALLOWED_NETWORKS = [
-  "mixx_tg",
-  "moov_tg",
-  "togocel",
-] as const;
+const ALLOWED_NETWORKS = ["moov_tg", "togocel"] as const;
 
 type AllowedNetwork = (typeof ALLOWED_NETWORKS)[number];
 
@@ -25,6 +21,7 @@ type SasPayResponse = {
   checkout_url?: string;
   detail?: string;
   error?: string;
+  code?: string;
 };
 
 function normalizePhone(value: string): string | null {
@@ -60,23 +57,27 @@ function jsonError(message: string, status: number) {
       success: false,
       message,
     },
-    { status }
+    { status },
   );
+}
+
+function getProviderMessage(data: SasPayResponse): string {
+  return data.detail || data.message || data.error || "Erreur SasPay";
 }
 
 export async function POST(request: Request) {
   try {
-    // 1. Vérifier la session de l'utilisateur.
+    // 1. Vérifier la session.
     const user = await getCurrentUser();
 
     if (!user) {
       return jsonError(
         "Vous devez vous connecter pour effectuer ce paiement.",
-        401
+        401,
       );
     }
 
-    // 2. Lire et valider les informations envoyées.
+    // 2. Lire les informations envoyées.
     let body: {
       network?: unknown;
       paymentPhone?: unknown;
@@ -92,16 +93,19 @@ export async function POST(request: Request) {
       typeof body.network !== "string" ||
       !ALLOWED_NETWORKS.includes(body.network as AllowedNetwork)
     ) {
-      return jsonError("Veuillez sélectionner un réseau valide.", 400);
+      return jsonError(
+        "Veuillez sélectionner Moov Money ou Togocel.",
+        400,
+      );
     }
 
     if (
       typeof body.paymentPhone !== "string" ||
-      body.paymentPhone.trim().length === 0
+      body.paymentPhone.trim() === ""
     ) {
       return jsonError(
-        "Veuillez renseigner le numéro Mobile Money.",
-        400
+        "Veuillez renseigner votre numéro Mobile Money.",
+        400,
       );
     }
 
@@ -111,14 +115,13 @@ export async function POST(request: Request) {
     if (!paymentPhone) {
       return jsonError(
         "Le numéro doit être un numéro togolais valide de 8 chiffres, avec ou sans indicatif +228.",
-        400
+        400,
       );
     }
 
     // 3. Vérifier la configuration SasPay.
     const apiUrl = (
-      process.env.SASPAY_API_URL ||
-      "https://api.saspay.me/api/v1"
+      process.env.SASPAY_API_URL || "https://api.saspay.me/api/v1"
     ).replace(/\/+$/, "");
 
     const secretKey = process.env.SASPAY_SECRET_KEY;
@@ -128,11 +131,11 @@ export async function POST(request: Request) {
 
       return jsonError(
         "Le service de paiement est temporairement indisponible.",
-        500
+        500,
       );
     }
 
-    // 4. Vérifier que l'utilisateur doit encore activer son compte.
+    // 4. Vérifier l'activation du compte.
     const activation = await prisma.activation.findUnique({
       where: {
         userId: user.id,
@@ -142,40 +145,31 @@ export async function POST(request: Request) {
     if (!activation) {
       return jsonError(
         "Aucune demande d'activation n'a été trouvée pour votre compte.",
-        404
+        404,
       );
     }
 
     if (user.isActive || activation.status === "ACTIVE") {
-      return jsonError(
-        "Votre compte est déjà activé.",
-        400
-      );
+      return jsonError("Votre compte est déjà activé.", 400);
     }
 
     if (activation.status !== "PENDING") {
       return jsonError(
         "Votre demande d'activation n'est pas en attente de paiement.",
-        400
+        400,
       );
     }
 
     if (activation.amount !== ACTIVATION_AMOUNT) {
-      console.error(
-        "Montant d'activation inattendu :",
-        activation.amount
-      );
+      console.error("Montant d'activation inattendu :", activation.amount);
 
       return jsonError(
         "Impossible de préparer le paiement. Contactez le support.",
-        500
+        500,
       );
     }
 
-    // 5. Réutiliser une tentative encore en attente.
-    // Cela évite de créer plusieurs paiements lorsqu'un utilisateur
-    // clique plusieurs fois ou qu'une requête précédente expire.
-
+    // 5. Chercher la dernière tentative encore en attente.
     let payment = await prisma.activationPayment.findFirst({
       where: {
         userId: user.id,
@@ -188,6 +182,41 @@ export async function POST(request: Request) {
     });
 
     if (payment) {
+      // Une demande déjà acceptée par SasPay ne doit pas être recréée.
+      if (payment.providerPaymentId) {
+        if (
+          payment.network !== network ||
+          payment.paymentPhone !== paymentPhone
+        ) {
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                "Une demande de paiement est déjà en cours avec un autre réseau ou numéro. Vérifiez son statut avant de lancer une nouvelle demande.",
+              paymentId: payment.id,
+            },
+            { status: 409 },
+          );
+        }
+
+        return NextResponse.json({
+          success: true,
+          pending: true,
+          message:
+            "Une demande de paiement existe déjà. Vérifiez votre téléphone pour confirmer le paiement.",
+          paymentId: payment.id,
+          checkoutUrl: payment.checkoutUrl,
+          checkout_url: payment.checkoutUrl,
+          status: "PENDING",
+        });
+      }
+
+      // Si aucune référence SasPay n'a été enregistrée, nous ne pouvons
+      // pas savoir avec certitude si une ancienne requête a été acceptée.
+      // Une nouvelle requête pourrait entraîner un double prélèvement.
+      //
+      // Nous réutilisons donc la même tentative et la même clé
+      // d'idempotence pour une nouvelle tentative contrôlée.
       if (
         payment.network !== network ||
         payment.paymentPhone !== paymentPhone
@@ -195,27 +224,16 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             success: false,
+            pending: true,
             message:
-              "Une tentative de paiement est déjà en attente. Utilisez le même réseau et le même numéro ou attendez la confirmation de cette tentative.",
+              "Une tentative précédente n'a pas encore été vérifiée. Réutilisez le même réseau et le même numéro pour éviter un double paiement.",
             paymentId: payment.id,
           },
-          { status: 409 }
+          { status: 409 },
         );
       }
-
-      // Si SasPay a déjà accepté la demande, ne pas en créer une autre.
-      if (payment.providerPaymentId) {
-        return NextResponse.json({
-          success: true,
-          message:
-            "Votre demande de paiement est en cours de traitement. Vérifiez votre téléphone pour confirmer le paiement.",
-          paymentId: payment.id,
-          checkoutUrl: payment.checkoutUrl,
-          checkout_url: payment.checkoutUrl,
-        });
-      }
     } else {
-      // 6. Créer une tentative locale avec une clé d'idempotence.
+      // 6. Créer une nouvelle tentative locale.
       payment = await prisma.activationPayment.create({
         data: {
           userId: user.id,
@@ -230,7 +248,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // 7. Préparer les informations client côté serveur.
+    // 7. Préparer les informations du client.
     const customerName = splitName(user.name);
 
     const payload = {
@@ -247,32 +265,25 @@ export async function POST(request: Request) {
       network,
     };
 
-    // 8. Créer le paiement chez SasPay.
-    // On conserve la même clé si cette tentative doit être réessayée.
+    // 8. Envoyer la demande à SasPay.
     let providerResponse: Response;
 
     try {
-      providerResponse = await fetch(
-        `${apiUrl}/payments/softpay/`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${secretKey}`,
-            "Content-Type": "application/json",
-            "Idempotency-Key": payment.idempotencyKey,
-          },
-          body: JSON.stringify(payload),
-          cache: "no-store",
-          signal: AbortSignal.timeout(20000),
-        }
-      );
+      providerResponse = await fetch(`${apiUrl}/payments/softpay/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": payment.idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+        signal: AbortSignal.timeout(20000),
+      });
     } catch (error) {
-      // Une interruption réseau ne prouve pas que SasPay a refusé
-      // le paiement. On conserve la tentative pour la réessayer
-      // avec la même clé d'idempotence.
       console.error(
         "Erreur réseau lors de la demande SasPay :",
-        error instanceof Error ? error.message : "Erreur inconnue"
+        error instanceof Error ? error.message : "Erreur inconnue",
       );
 
       return NextResponse.json(
@@ -281,12 +292,13 @@ export async function POST(request: Request) {
           pending: true,
           paymentId: payment.id,
           message:
-            "Nous n'avons pas pu confirmer la réponse du service de paiement. Ne recommencez pas avec un autre numéro. Réessayez avec les mêmes informations.",
+            "La réponse de SasPay n'a pas pu être confirmée. Ne changez pas de numéro et ne relancez pas plusieurs paiements. Vérifiez le statut de cette tentative avant de réessayer.",
         },
-        { status: 502 }
+        { status: 502 },
       );
     }
 
+    // 9. Lire la réponse du fournisseur.
     const rawResponse = await providerResponse.text();
 
     let providerData: SasPayResponse = {};
@@ -299,39 +311,75 @@ export async function POST(request: Request) {
       providerData = {};
     }
 
-    // 9. Traiter les erreurs explicites du fournisseur.
+    // 10. Traiter les refus explicites.
     if (!providerResponse.ok) {
+      const providerMessage = getProviderMessage(providerData);
+
       console.error("SasPay a refusé la demande de paiement.", {
         httpStatus: providerResponse.status,
         paymentId: payment.id,
-        providerMessage:
-          providerData.detail || providerData.message || providerData.error,
+        providerCode: providerData.code,
+        providerMessage,
       });
 
-      // Ne pas marquer automatiquement FAILED :
-      // une réponse d'erreur ou un délai dépassé ne garantit pas
-      // que le fournisseur n'a pas créé la transaction.
+      /*
+       * Un HTTP 422 avec no_route_available est un refus explicite :
+       * aucune route n'est disponible pour cette demande.
+       *
+       * Nous marquons cette tentative FAILED pour ne pas la réutiliser
+       * indéfiniment. Une prochaine tentative créera une nouvelle ligne.
+       *
+       * Les autres erreurs HTTP ne sont pas toutes nécessairement
+       * définitives : elles restent à vérifier pour éviter les doublons.
+       */
+      if (
+        providerResponse.status === 422 &&
+        providerData.code === "no_route_available"
+      ) {
+        await prisma.activationPayment.updateMany({
+          where: {
+            id: payment.id,
+            status: "PENDING",
+            providerPaymentId: null,
+          },
+          data: {
+            status: "FAILED",
+          },
+        });
+
+        return NextResponse.json(
+          {
+            success: false,
+            pending: false,
+            code: "no_route_available",
+            message:
+              "SasPay ne dispose actuellement d'aucune route pour ce réseau. Choisissez un autre réseau disponible ou contactez le support SasPay.",
+          },
+          { status: 422 },
+        );
+      }
+
       return NextResponse.json(
         {
           success: false,
           pending: true,
           paymentId: payment.id,
           message:
-            "Le service de paiement n'a pas confirmé la création de la demande. Réessayez avec les mêmes informations.",
+            "SasPay n'a pas confirmé la création du paiement. Vérifiez le statut de la tentative avant de réessayer.",
         },
-        { status: 502 }
+        { status: 502 },
       );
     }
 
-    // 10. Enregistrer l'identifiant fournisseur.
-    if (!providerData.id) {
-      console.error(
-        "Réponse SasPay sans identifiant de paiement.",
-        {
-          paymentId: payment.id,
-          httpStatus: providerResponse.status,
-        }
-      );
+    // 11. Vérifier que SasPay a renvoyé une référence.
+    if (
+      typeof providerData.id !== "string" ||
+      providerData.id.trim() === ""
+    ) {
+      console.error("Réponse SasPay sans identifiant de paiement.", {
+        paymentId: payment.id,
+        httpStatus: providerResponse.status,
+      });
 
       return NextResponse.json(
         {
@@ -339,9 +387,9 @@ export async function POST(request: Request) {
           pending: true,
           paymentId: payment.id,
           message:
-            "La réponse du service de paiement est incomplète. Votre demande doit être vérifiée avant toute nouvelle tentative.",
+            "La réponse de SasPay est incomplète. Vérifiez le statut de cette tentative avant d'en créer une autre.",
         },
-        { status: 502 }
+        { status: 502 },
       );
     }
 
@@ -351,6 +399,7 @@ export async function POST(request: Request) {
         ? providerData.checkout_url
         : null;
 
+    // 12. Enregistrer la référence SasPay.
     await prisma.activationPayment.update({
       where: {
         id: payment.id,
@@ -362,13 +411,13 @@ export async function POST(request: Request) {
       },
     });
 
-    // 11. Confirmer la création de la demande, pas le paiement.
-    // Le compte reste inactif tant que le paiement n'a pas été
-    // vérifié auprès de SasPay.
+    // 13. La demande est créée, mais le compte reste inactif
+    // jusqu'à la confirmation effective du paiement par SasPay.
     return NextResponse.json({
       success: true,
+      pending: true,
       message:
-        "Demande de paiement créée. Confirmez le paiement sur votre téléphone si vous recevez une notification Mobile Money.",
+        "Demande de paiement créée. Vérifiez votre téléphone et confirmez le paiement si une notification Mobile Money est envoyée.",
       paymentId: payment.id,
       checkoutUrl,
       checkout_url: checkoutUrl,
@@ -377,12 +426,12 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(
       "Erreur interne de création du paiement d'activation :",
-      error instanceof Error ? error.message : "Erreur inconnue"
+      error instanceof Error ? error.message : "Erreur inconnue",
     );
 
     return jsonError(
       "Une erreur interne est survenue. Veuillez réessayer plus tard.",
-      500
+      500,
     );
   }
 }
